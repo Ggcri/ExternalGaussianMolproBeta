@@ -21,6 +21,19 @@ export SCRATCH=$TMPDIR  # used internally by the scripts
 export PATH=/path/to/molpro/bin:/path/to/gaussian/bin:$PATH
 ````
 
+> **Note:** The external script shoud have execution permission 
+
+```text
+chmod +x MolproExt
+```
+
+> **Note:** At the beginning of the MolproExt or MolproExt_GA code the path
+```text
+#!/shared/apps/python/3.9.16/bin/python3.9 -u
+```
+
+Should be changed to point to the available python interpreter. Finally, numpy should be available. 
+
 ## 2. Preamble file
 
 The first argument passed to `MolproExt` is a *preamble* file. It can define how different gradient contributions are combined using the `scheme` keyword. Each line starting with `!` after the keyword is interpreted as a coefficient. For example:
