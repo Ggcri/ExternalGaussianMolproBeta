@@ -1,6 +1,4 @@
-Certo! Ecco il contenuto completo del `README.md` in **raw markdown**, pronto per essere copiato e incollato su GitHub:
 
-````markdown
 # ExternalGaussianMolproBeta  
 # Using Molpro as an External Program
 
@@ -76,7 +74,7 @@ C3H7NO
  H                 -0.84720000    1.98200000    0.22870000
  H                  1.08290000    1.05430000    1.12000000
 
-@/home/barone/lcrisci_vb/CustomBasisSet/3F12Red.gbs
+@/CustomBasisSet/3F12Red.gbs
 
 --link1--
 %chk=1_3-oxazolidine_pcs2.chk
@@ -103,8 +101,7 @@ where `<expression>` is built from the intermediate energies obtained with Molpr
 A minimal example is provided in `ending.dat`:
 
 ```text
-include /home/barone/lcrisci_vb/MolproProcedures/basis/TrdRowElements_3F12
-basis=cc-pvdz-f12
+include /path/to/3F12/basis/TrdRowElements_3F12
 {rhf,so-sci}
 {ccsd(t)-f12b,df_basis=avdz-f12/mp2fit,df_basis_exch=avdz-f12/jkfit,ri_basis=avdz/jkfit}
 ccsd_energy = energy
@@ -143,7 +140,5 @@ Messages about the run (selected program, number of processors, memory usage, en
 
 To use the Global Arrays version of Molpro, invoke the wrapper `MolproExt_GA` (or pass the `molpro_ga` option to `CentralExt`). The underlying Molpro executable must end with `_GA`.
 
-```
 
-Fammi sapere se vuoi una versione `italiana`, oppure un file `.md` vero e proprio da scaricare!
-```
+
