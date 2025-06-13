@@ -146,7 +146,7 @@ The wrapper will search for `exe_energy = ...` to extract the total energy and l
 
 ### Example: Hierarchical optimization workflow with frequency reading
 
-text
+```text
 %chk=1_3-oxazolidine_rev.chk
 %nprocs=16
 %mem=64GB
@@ -182,6 +182,8 @@ Title card
 
 0 1
 
+
+```
 ## 5. Output structure
 
 During execution, the wrapper creates a temporary directory named `molpro_tmp_<number>` which contains:
