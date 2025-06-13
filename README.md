@@ -1,16 +1,26 @@
+# ExternalGaussianMolproBeta
 
-# ExternalGaussianMolproBeta  
 # Using Molpro as an External Program
 
 This folder contains sample files and scripts for the `MolproExt` interface that allows Gaussian to call Molpro for energies and gradients.
+
+
+---
+- [1. Environment variables](#1-environment-variables)
+- [2. Preamble file](#2-preamble-file)
+- [3. Gaussian input and wrapper keyword explanation](#3-gaussian-input-and-wrapper-keyword-explanation)
+- [4. Ending file](#4-ending-file)
+  - [Example: Hierarchical optimization workflow with frequency reading](#example-hierarchical-optimization-workflow-with-frequency-reading)
+- [5. Output structure](#5-output-structure)
+- [6. Global Arrays version](#6-global-arrays-version)
 
 ## 1. Environment variables
 
 The wrapper expects the following environment variables to be set before running:
 
-- `GAUSS_SCRDIR` – scratch directory used by Gaussian.
-- `TMPDIR` (or `SCRATCH`) – scratch directory for Molpro.
-- `PATH` – must include the directories containing the `molpro` and `g16`/`gdv` executables.
+* `GAUSS_SCRDIR` – scratch directory used by Gaussian.
+* `TMPDIR` (or `SCRATCH`) – scratch directory for Molpro.
+* `PATH` – must include the directories containing the `molpro` and `g16`/`gdv` executables.
 
 Example configuration:
 
@@ -19,52 +29,124 @@ export GAUSS_SCRDIR=/path/to/gaussian_scratch
 export TMPDIR=/path/to/molpro_scratch
 export SCRATCH=$TMPDIR  # used internally by the scripts
 export PATH=/path/to/molpro/bin:/path/to/gaussian/bin:$PATH
-````
+```
 
-> **Note:** The external script shoud have execution permission 
+> **Note:** Ensure the `MolproExt` script is executable:
 
-```text
+```bash
 chmod +x MolproExt
 ```
 
-> **Note:** At the beginning of the MolproExt or MolproExt_GA code the path
+> **Note:** Modify the shebang (`#!`) at the top of `MolproExt` or `MolproExt_GA` to point to a valid Python interpreter on your system. For example:
+
 ```text
-#!/shared/apps/python/3.9.16/bin/python3.9 -u
+#!/usr/bin/env python3
 ```
 
-Should be changed to point to the available python interpreter. Finally, numpy should be available. 
+The `numpy` package must be available in the selected Python environment.
+
+---
 
 ## 2. Preamble file
 
-The first argument passed to `MolproExt` is a *preamble* file. It can define how different gradient contributions are combined using the `scheme` keyword. Each line starting with `!` after the keyword is interpreted as a coefficient. For example:
+The *preamble file* is the first argument passed to `MolproExt`. It defines the structure and instructions that will appear **before the geometry** section of the generated `qmolpro.com` input file. It may also define how to **combine gradients** from multiple runs.
+
+A minimal valid preamble **must include** a `!scheme` directive followed by a line of coefficients:
 
 ```text
 !scheme
 !1 -1 1
 ```
 
-This instructs the wrapper to combine three gradients with weights `1`, `-1` and `1`. The preamble content is inserted at the beginning of the generated `qmolpro.com` input file.
+This tells the wrapper to perform three separate gradient calculations and combine them using weights `1`, `-1`, and `1`. Please note that this is mandatory in case of a gradient calculation. The number of coefficients is not fixed and it is completely arbitrary based on the method.  
 
-> **Note:** The preamble file (`preamble.dat`) must either be located in the directory where the Gaussian job is launched, or its full path must be specified in the Gaussian input using the `External` keyword. The filename is arbitrary: you may use any name instead of `preamble.dat` as long as it is passed correctly to the `MolproExt` wrapper.
+Aside from the `!scheme` section, any other content valid in a Molpro input **before the geometry** can be placed in the preamble (e.g., memory settings, symmetry, global variables, etc.). This offers great flexibility in customizing your Molpro calculation.
 
-## 3. Gaussian input example
+> **Note:** The preamble file must either be in the Gaussian launch directory or be passed with a full path using the `External` keyword.
+>
+> The file **can have any name**. It does not have to be `preamble.dat`, as long as the correct filename is specified in the `External` call.
 
-An input file for Gaussian can invoke the wrapper using the `External` keyword:
+---
+
+## 3. Gaussian input and wrapper keyword explanation
+
+Gaussian invokes the external wrapper using the `External` keyword. A minimal example looks like this:
 
 ```text
 %chk=example.chk
-%nprocs=4
-%mem=8GB
-#p opt external="MolproExt preamble.dat ending.dat 4 8 READ" geom=allcheck
+%nprocs=1
+#p opt(nomicro) external="MolproExt preamble.dat ending.dat 4 8 READ"
 ```
 
-The amount of memory specified with `%mem` is the total memory for the job. The wrapper scales it down by 10% to leave room for the system and then divides it among the requested threads before passing it to Molpro.
+**WARNING**: nomicro is mandatory in case of an external invocation for gradients obtainment.
 
-> **Note:** The `ending.dat` file must also be either in the current working directory or specified with its full path. As with the preamble, the filename is not fixed — any valid file can be used.
+### Meaning of the wrapper arguments:
+
+```text
+MolproExt preamble.dat ending.dat 4 8 READ
+            |          |        | | |   |
+            |          |        | | |   └─ keyword: geometry source (READ or NONE)
+            |          |        | | └─── memory in GB to be passed to Molpro
+            |          |        | └───── number of threads for Molpro
+            |          └───────── ending file (commands to run in Molpro)
+            └──────────── preamble file (header and !scheme section)
+```
+
+* The `preamble.dat` is inserted before the geometry and must contain `!scheme`.
+* The `ending.dat` contains the final Molpro program blocks and energy expression.
+* The integer arguments set the number of processors and memory in GB **for Molpro only** (not Gaussian).
+  The wrapper reserves \~10% of the specified memory for system overhead.
+* `READ`: Gaussian will pass the current geometry from the checkpoint file.
+* `NONE`: No geometry is passed (used for single-point energy computations).
+
+> **Important:**
+> The filenames `preamble.dat` and `ending.dat` used in the examples are **just placeholders**. You can name these files however you like (e.g., `pre_opt_header.txt`, `molpro_tail.mol`), as long as the paths are passed correctly in the `External` keyword.
+
+---
+
+## 4. Ending file
+
+The *ending file* provides the **tail section** of the Molpro input, after the geometry. It contains the series of Molpro program blocks used for computing energy and gradient, and must **define the final total energy** using the variable `exe_energy`. For example:
+
+```text
+include /path/to/3F12/basis/TrdRowElements_3F12
+
+{rhf,so-sci}
+{ccsd(t)-f12b,df_basis=avdz-f12/mp2fit,df_basis_exch=avdz-f12/jkfit,ri_basis=avdz/jkfit}
+ccsd_energy = energy
+
+{forces}
+
+basis=cc-pwcvtz
+
+{rhf,so-sci}
+{mp2}
+mp2_fc = energy
+
+{forces}
+
+{rhf,so-sci}
+{mp2;core}
+mp2_ae = energy
+
+{forces}
+
+! Composite energy calculation according to scheme, without hf_energy
+exe_energy = ccsd_energy + mp2_ae - mp2_fc
+```
+
+The wrapper will search for `exe_energy = ...` to extract the total energy and log it.
+
+> **Note:**
+> The `ending.dat` file can contain any valid Molpro code after the geometry. It must match the `!scheme` coefficients in the preamble, if those involve energy combinations.
+>
+> Just like the preamble, the **filename of the ending file is arbitrary**. Any valid filename can be used as long as it is passed correctly in the `External` keyword.
+
+---
 
 ### Example: Hierarchical optimization workflow with frequency reading
 
-```text
+text
 %chk=1_3-oxazolidine_rev.chk
 %nprocs=16
 %mem=64GB
@@ -99,59 +181,24 @@ C3H7NO
 Title card
 
 0 1
-```
-
-## 4. Ending file
-
-The `ending.dat` file contains the Molpro commands to compute energies and gradients. The final line must define the total energy in the form:
-
-```text
-exe_energy = <expression>
-```
-
-where `<expression>` is built from the intermediate energies obtained with Molpro. The wrapper expects `exe_energy` to be present so that it can read the final energy from `ending.dat` along with any accounting information from the Molpro run.
-
-A minimal example is provided in `ending.dat`:
-
-```text
-include /path/to/3F12/basis/TrdRowElements_3F12
-{rhf,so-sci}
-{ccsd(t)-f12b,df_basis=avdz-f12/mp2fit,df_basis_exch=avdz-f12/jkfit,ri_basis=avdz/jkfit}
-ccsd_energy = energy
-
-{forces}
-
-basis=cc-pwcvtz
-
-{rhf,so-sci}
-{mp2}
-mp2_fc = energy
-
-{forces}
-
-{rhf,so-sci}
-{mp2;core}
-mp2_ae = energy
-
-{forces}
-
-! Composite energy calculation according to scheme, without hf_energy
-exe_energy = ccsd_energy + mp2_ae - mp2_fc
-```
 
 ## 5. Output structure
 
-During execution, a temporary directory named `molpro_tmp_<number>` is created containing:
+During execution, the wrapper creates a temporary directory named `molpro_tmp_<number>` which contains:
 
-* `qmolpro.com` – the Molpro input file.
-* `qmolpro.out` – textual Molpro output.
-* `qmolpro.xml` – XML file with gradients when available.
+* `qmolpro.com` – the assembled Molpro input file.
+* `qmolpro.out` – the full Molpro output file.
+* `qmolpro.xml` – gradients in XML format (if computed).
+* `external.log` – wrapper diagnostic log (processors, memory, energy).
 
-Messages about the run (selected program, number of processors, memory usage, energies and gradients) are written to `external.log`.
+---
 
-## 6. GA implementation
+## 6. Global Arrays version
 
-To use the Global Arrays version of Molpro, invoke the wrapper `MolproExt_GA` (or pass the `molpro_ga` option to `CentralExt`). The underlying Molpro executable must end with `_GA`.
+If using a GA-enabled build of Molpro, you can either:
 
+* Use the wrapper `MolproExt_GA`, or
+* Pass `molpro_ga` as a keyword to the higher-level `CentralExt` interface.
 
+The Molpro executable used must have `_GA` in its name (e.g., `molpro_GA`).
 
